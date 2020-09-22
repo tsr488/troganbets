@@ -1,0 +1,141 @@
+﻿@using Troganbets.Models
+@model IEnumerable<Game>
+
+@{
+    ViewBag.Title = "Murray's Hoagie Shop";
+
+    int realTimeWeekNumber = (int)((DateTime.UtcNow - ViewBag.SeasonStart).TotalDays / 7) + 1;
+
+    if (!int.TryParse(Request.QueryString["week"], out int selectedWeek))
+    {
+        selectedWeek = realTimeWeekNumber;
+    }
+
+    if (!bool.TryParse(Request.QueryString["hideBoring"], out bool hideBoring))
+    {
+        hideBoring = false;
+    }
+}
+
+@functions
+{
+    string GetBadgeHtml(int friendlyScore, int enemyScore, IEnumerable<Bet> bets)
+    {
+        string badgeHtml = string.Empty;
+
+        // Handle no bets.
+        if (!bets.Any())
+        {
+            return badgeHtml;
+        }
+
+        // Create badge for spread bets, if any.
+        var spreadBets = bets.Where(bet => bet.Points.HasValue);
+        if (spreadBets.Any())
+        {
+            // Assuming all spread bets have the same point spread, determine winning or losing status.
+            decimal spread = spreadBets.First().Points.Value;
+            decimal friendlyScoreWithSpread = friendlyScore + spread;
+            string badgeStyle = (friendlyScoreWithSpread >= enemyScore) ? "badge-success" : "badge-danger";
+
+            // Show the first character of the entry name of each spread bet, to save space.
+            string entriesText = string.Join("/", spreadBets.Select(bet => bet.Entry[0]));
+            string spreadText = spread.ToString("+#0.#;-##.#");
+            badgeHtml += $"<span class=\"badge {badgeStyle}\" style=\"margin-left: 2px\">{entriesText} {spreadText}</span>";
+        }
+
+        //  Create badge for survivor bet, if any.
+        if (bets.Any(bet => !bet.Points.HasValue))
+        {
+            string badgeStyle = (friendlyScore >= enemyScore) ? "badge-success" : "badge-danger";
+            badgeHtml += $"<span class=\"badge badge-pill {badgeStyle}\" style=\"margin-left: 2px\">S</span>";
+        }
+
+        return badgeHtml;
+    }
+}
+
+<h3>@ViewBag.Title</h3>
+
+@for (int week = 1; week <= realTimeWeekNumber; week++)
+{
+    string buttonClass = (week == selectedWeek) ? "btn-primary" : "btn-secondary";
+    <button type="button" class="btn @buttonClass" style="margin-top: 5px;" onclick="location.href='@Url.Action("Index", new { week, hideBoring })'">W@(week)</button>
+}
+
+<hr />
+<div class="custom-control custom-switch" style="margin-left: 4px;">
+    <input type="checkbox" class="custom-control-input" id="hideBoringToggle" @if (hideBoring) { @Html.Raw("checked") }>
+    <label class="custom-control-label" for="hideBoringToggle"><em>Only show games with bets</em></label>
+</div>
+
+@foreach (Game game in Model)
+{
+    <hr />
+    <div class="row no-gutters">
+
+        <div class="col">
+            <div class="row flex-nowrap no-gutters">
+
+                <div class="col-3 text-right" style="margin-right: 5px;">
+                    @game.AwayTeam
+                    <br />
+                    @game.HomeTeam
+                </div>
+
+                <div class="col-2 text-right">
+                    @game.AwayScore
+                    <br />
+                    @game.HomeScore
+                </div>
+
+                <div class="col text-nowrap" style="margin-left: 4px;">
+                    @Html.Raw(GetBadgeHtml(game.AwayScore, game.HomeScore, game.Bets.Where(bet => !bet.OnHomeTeam)))
+                    <br />
+                    @Html.Raw(GetBadgeHtml(game.HomeScore, game.AwayScore, game.Bets.Where(bet => bet.OnHomeTeam)))
+                </div>
+
+            </div>
+        </div>
+
+        <div class="col text-center align-self-center">
+            @if (game.UtcDateTime > DateTime.UtcNow)
+            {
+                <em><time>@game.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")</time></em>
+                <br />
+                @Html.ActionLink("Bet", "Create", "Bets", new { gameId = game.Id }, new {})
+            }
+            else if (game.Status.StartsWith("Final"))
+            {
+                <strong>@game.Status</strong>
+            }
+            else
+            {
+                @game.Status
+                <br />
+                @game.Situation
+            }
+        </div>
+
+    </div>
+}
+
+@section Scripts
+{
+    <script>
+        // Convert times to the user's local time zone.
+        $("time").each(function()
+        {
+            const utcTimeHtml = $(this).html().trim();
+            const date = new Date(utcTimeHtml);
+            const options = { month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" };
+            $(this).html(date.toLocaleDateString(undefined, options));
+        });
+
+        // When the toggle is toggled, reload the page with the games filtered appropriately.
+        $('#hideBoringToggle').on('change.bootstrapSwitch', function(event)
+        {
+            window.location = "/?week=@selectedWeek&hideBoring=" + event.target.checked;
+        });
+    </script>
+}
